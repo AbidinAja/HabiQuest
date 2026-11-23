@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Kelola Kebiasaan - HabiQuest{% endblock %}
+
+{% block content %}
+<!-- Card Tambah Kebiasaan Baru (Sesuai Sketsa 3 di Proposal) -->
+<div class="card">
+  <h2 class="card-title">Tambah Kebiasaan Baru</h2>
+  <form method="post" action="{% url 'habits' %}">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="tambah">
+
+    <div class="form-row">
+      <div class="form-group" style="flex: 2;">
+        <label class="form-label" for="nama">Nama Kebiasaan</label>
+        <input type="text" id="nama" name="nama" class="form-control"
+               placeholder="Contoh: Baca Jurnal PBO, Mengerjakan Soal Algoritma" required minlength="3">
+      </div>
+
+      <div class="form-group" style="flex: 1.5;">
+        <label class="form-label" for="jenis">Jenis</label>
+        <select id="jenis" name="jenis" class="form-control" required>
+          {% for j in daftar_jenis %}
+          <option value="{{ j.kode }}">{{ j.nama }} ({{ j.aturan }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group" style="flex: 1;">
+        <label class="form-label" for="target">Target / Minggu</label>
+        <input type="number" id="target" name="target_mingguan" class="form-control"
+               min="1" max="7" value="5" required>
+      </div>
+
+      <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+        <button type="submit" class="btn btn-primary" style="height: 42px;">
+          + Tambah
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- Card Daftar Kebiasaan yang Sudah Ada -->
+<div class="card">
+  <h2 class="card-title">Daftar Kebiasaan Anda</h2>
+
+  {% if habits %}
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nama</th>
+          <th>Jenis</th>
+          <th>Target / Minggu</th>
+          <th>Aturan XP</th>
+          <th style="text-align: right;">Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in habits %}
+        <tr>
+          <td><strong>{{ h.nama }}</strong></td>
+          <td><span class="tag-badge tag-jenis">{{ h.NAMA_JENIS }}</span></td>
+          <td>{{ h.target_mingguan }}x seminggu</td>
+          <td style="color: var(--text-muted); font-size: 0.85rem;">{{ h.aturan_xp }}</td>
+          <td style="text-align: right; white-space: nowrap;">
+            <button type="button" class="btn btn-outline btn-sm"
+                    onclick="bukaModalUbah('{{ h.id }}', '{{ h.nama|escapejs }}', '{{ h.target_mingguan }}')">
+              Ubah
+            </button>
+
+            <form method="post" action="{% url 'habits' %}" style="display: inline-block;"
+                  onsubmit="return confirm('Apakah Anda yakin ingin menghapus kebiasaan \'{{ h.nama|escapejs }}\'?');">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="hapus">
+              <input type="hidden" name="habit_id" value="{{ h.id }}">
+              <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+    <p>Belum ada kebiasaan yang dibuat. Gunakan formulir di atas untuk menambahkan kebiasaan pertama Anda!</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Modal Ubah Kebiasaan -->
+<div id="modalUbah" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+  <div class="card" style="width: 100%; max-width: 480px; margin: 1.5rem;">
+    <h3 class="card-title">Ubah Kebiasaan</h3>
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+      <em>Catatan: Sesuai aturan PBO, jenis kebiasaan tidak dapat diubah karena masing-masing merupakan class tersendiri dengan formula XP yang unik.</em>
+    </p>
+
+    <form method="post" action="{% url 'habits' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="ubah">
+      <input type="hidden" id="ubahHabitId" name="habit_id" value="">
+
+      <div class="form-group">
+        <label class="form-label" for="ubahNama">Nama Kebiasaan</label>
+        <input type="text" id="ubahNama" name="nama" class="form-control" required minlength="3">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="ubahTarget">Target Mingguan (1 - 7 hari)</label>
+        <input type="number" id="ubahTarget" name="target_mingguan" class="form-control" min="1" max="7" required>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+        <button type="button" class="btn btn-outline" onclick="tutupModalUbah()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function bukaModalUbah(habitId, nama, target) {
+  document.getElementById('ubahHabitId').value = habitId;
+  document.getElementById('ubahNama').value = nama;
+  document.getElementById('ubahTarget').value = target;
+  document.getElementById('modalUbah').style.display = 'flex';
+}
+
+function tutupModalUbah() {
+  document.getElementById('modalUbah').style.display = 'none';
+}
+
+window.onclick = function(event) {
+  var modal = document.getElementById('modalUbah');
+  if (event.target === modal) {
+    tutupModalUbah();
+  }
+}
+</script>
+{% endblock %}

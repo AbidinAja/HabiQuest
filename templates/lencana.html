@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Lencana & Statistik - HabiQuest{% endblock %}
+
+{% block content %}
+<!-- Layout Dua Kolom Sesuai Sketsa 4 di Proposal -->
+<div class="grid-2">
+  <!-- Kolom Kiri: Koleksi Lencana -->
+  <div>
+    <div class="card">
+      <h2 class="card-title">🏆 Koleksi Lencana</h2>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Lencana</th>
+              <th>Syarat</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for b in badges %}
+            <tr>
+              <td>
+                <strong>{{ b.nama }}</strong>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">{{ b.deskripsi }}</div>
+              </td>
+              <td style="font-size: 0.85rem;">{{ b.syarat }}</td>
+              <td>
+                {% if b.terbuka %}
+                  <span class="tag-badge tag-unlocked">🔓 {{ b.status }}</span>
+                {% else %}
+                  <span class="tag-badge tag-locked">🔒 Terkunci</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kolom Kanan: Grafik XP 7 Hari & Riwayat Terbaru -->
+  <div>
+    <!-- Grafik XP 7 Hari -->
+    <div class="card">
+      <h2 class="card-title">📈 XP 7 Hari Terakhir</h2>
+      <div class="chart-container">
+        {% for col in grafik_xp %}
+        <div class="chart-col">
+          <div class="chart-xp-val">{{ col.xp }}</div>
+          <div class="chart-bar-wrap">
+            <div class="chart-bar {% if col.is_hari_ini %}bar-today{% endif %}"
+                 style="height: {{ col.persen }}%;"
+                 title="{{ col.tanggal_str }}: {{ col.xp }} XP"></div>
+          </div>
+          <div class="chart-label">
+            <div>{{ col.hari_str }}</div>
+            <div style="font-size: 0.7rem; opacity: 0.8;">{{ col.tanggal_str }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="display: flex; justify-content: center; gap: 1.5rem; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
+        <span style="display: flex; align-items: center; gap: 0.35rem;">
+          <span style="display: inline-block; width: 12px; height: 12px; background: var(--primary); border-radius: 2px;"></span> Hari Sebelumnya
+        </span>
+        <span style="display: flex; align-items: center; gap: 0.35rem;">
+          <span style="display: inline-block; width: 12px; height: 12px; background: var(--accent-streak); border-radius: 2px;"></span> Hari Ini
+        </span>
+      </div>
+    </div>
+
+    <!-- Riwayat Terbaru -->
+    <div class="card">
+      <h2 class="card-title">📜 Riwayat Aktivitas Terbaru</h2>
+      {% if riwayat %}
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Kebiasaan</th>
+              <th>Nilai</th>
+              <th>XP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in riwayat %}
+            <tr>
+              <td style="font-size: 0.85rem; color: var(--text-muted);">{{ r.tanggal }}</td>
+              <td><strong>{{ r.nama }}</strong></td>
+              <td>{{ r.nilai }}</td>
+              <td style="font-weight: 700; color: var(--accent-xp);">+{{ r.xp_didapat }} XP</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">
+        Belum ada riwayat aktivitas yang tercatat.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

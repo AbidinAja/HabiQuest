@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Panel Admin - HabiQuest{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+  <h2 style="font-size: 1.5rem; font-weight: 800; color: var(--text-dark);">🛡️ Panel Pengelola Sistem (Admin)</h2>
+  <p style="color: var(--text-muted); font-size: 0.9rem;">Kelola seluruh akun mahasiswa dan master lencana aplikasi.</p>
+</div>
+
+{% if tab_aktif == 'badge' %}
+<!-- ================== TAB MASTER LENCANA ================== -->
+<div class="card">
+  <h3 class="card-title">+ Tambah Master Lencana Baru</h3>
+  <form method="post" action="{% url 'admin_panel' %}">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="tambah_badge">
+
+    <div class="form-row">
+      <div class="form-group" style="flex: 1;">
+        <label class="form-label" for="tipe">Tipe Syarat</label>
+        <select id="tipe" name="tipe" class="form-control" required>
+          <option value="streak">Streak (Hari Beruntun)</option>
+          <option value="xp">Total XP</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="flex: 2;">
+        <label class="form-label" for="nama">Nama Lencana</label>
+        <input type="text" id="nama" name="nama" class="form-control"
+               placeholder="Contoh: Sang Juara Belajar" required minlength="3">
+      </div>
+
+      <div class="form-group" style="flex: 2;">
+        <label class="form-label" for="deskripsi">Deskripsi</label>
+        <input type="text" id="deskripsi" name="deskripsi" class="form-control"
+               placeholder="Deskripsi pencapaian lencana">
+      </div>
+
+      <div class="form-group" style="flex: 1;">
+        <label class="form-label" for="ambang">Nilai Ambang</label>
+        <input type="number" id="ambang" name="ambang" class="form-control"
+               placeholder="Contoh: 14 atau 1000" min="1" required>
+      </div>
+
+      <div class="form-group" style="flex: 0 0 auto; align-self: flex-end;">
+        <button type="submit" class="btn btn-primary" style="height: 42px;">
+          Tambah Lencana
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h3 class="card-title">Daftar Master Lencana</h3>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Tipe</th>
+          <th>Nama</th>
+          <th>Deskripsi</th>
+          <th>Ambang Syarat</th>
+          <th style="text-align: right;">Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in badge_list %}
+        <tr>
+          <td>#{{ b.id }}</td>
+          <td><span class="tag-badge tag-jenis">{{ b.NAMA_TIPE }}</span></td>
+          <td><strong>{{ b.nama }}</strong></td>
+          <td>{{ b.deskripsi }}</td>
+          <td>{{ b.ambang }}</td>
+          <td style="text-align: right;">
+            <form method="post" action="{% url 'admin_panel' %}" style="display: inline-block;"
+                  onsubmit="return confirm('Hapus lencana \'{{ b.nama|escapejs }}\'?');">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="hapus_badge">
+              <input type="hidden" name="badge_id" value="{{ b.id }}">
+              <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<!-- ================== TAB PENGGUNA ================== -->
+<div class="card">
+  <h3 class="card-title">Daftar Pengguna Terdaftar</h3>
+  <div class="table-responsive">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Nama Pengguna</th>
+          <th>Email</th>
+          <th>Peran</th>
+          <th>Level</th>
+          <th>Total XP</th>
+          <th style="text-align: right;">Aksi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in pengguna_list %}
+        <tr>
+          <td>#{{ u.id }}</td>
+          <td><strong>{{ u.nama }}</strong></td>
+          <td>{{ u.email }}</td>
+          <td>
+            {% if u.peran == 'Admin' %}
+              <span class="tag-badge pill-level">Admin</span>
+            {% else %}
+              <span class="tag-badge tag-unlocked">Mahasiswa</span>
+            {% endif %}
+          </td>
+          <td>{% if u.peran == 'Admin' %}-{% else %}Level {{ u.level }}{% endif %}</td>
+          <td>{% if u.peran == 'Admin' %}-{% else %}{{ u.xp }} XP{% endif %}</td>
+          <td style="text-align: right;">
+            {% if u.peran != 'Admin' %}
+            <form method="post" action="{% url 'admin_panel' %}" style="display: inline-block;"
+                  onsubmit="return confirm('Apakah Anda yakin ingin menghapus akun mahasiswa \'{{ u.nama|escapejs }}\'? Seluruh data habit dan log akan dihapus.');">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="hapus_akun">
+              <input type="hidden" name="akun_id" value="{{ u.id }}">
+              <button type="submit" class="btn btn-danger btn-sm">Hapus Akun</button>
+            </form>
+            {% else %}
+              <span style="font-size: 0.8rem; color: var(--text-light); font-style: italic;">Akun Utama</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

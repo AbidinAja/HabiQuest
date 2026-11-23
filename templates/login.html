@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Masuk & Registrasi - HabiQuest{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card" style="box-shadow: var(--shadow-lg);">
+    <div class="auth-header">
+      <h1>⚔️ HabiQuest</h1>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">
+        Bangun kebiasaan belajar, raih level berikutnya
+      </p>
+    </div>
+
+    <!-- Tab Masuk / Daftar -->
+    <div class="auth-tabs">
+      <a href="?tab=masuk" class="auth-tab-btn {% if tab_aktif != 'daftar' %}active{% endif %}">Masuk</a>
+      <a href="?tab=daftar" class="auth-tab-btn {% if tab_aktif == 'daftar' %}active{% endif %}">Daftar</a>
+    </div>
+
+    {% if tab_aktif != 'daftar' %}
+    <!-- Form Masuk -->
+    <form method="post" action="{% url 'login' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="login">
+
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input type="email" id="email" name="email" class="form-control"
+               value="{{ email_masuk|default:'' }}" placeholder="nama@email.com" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Kata Sandi</label>
+        <input type="password" id="password" name="password" class="form-control"
+               placeholder="Masukkan kata sandi" required>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; padding: 0.75rem;">
+        Masuk ke HabiQuest
+      </button>
+    </form>
+    {% else %}
+    <!-- Form Daftar -->
+    <form method="post" action="{% url 'login' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="register">
+
+      <div class="form-group">
+        <label class="form-label" for="nama">Nama Lengkap</label>
+        <input type="text" id="nama" name="nama" class="form-control"
+               value="{{ nama_daftar|default:'' }}" placeholder="Nama Mahasiswa (min. 2 karakter)" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="email_reg">Email</label>
+        <input type="email" id="email_reg" name="email" class="form-control"
+               value="{{ email_daftar|default:'' }}" placeholder="nama@email.com" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password_reg">Kata Sandi</label>
+        <input type="password" id="password_reg" name="password" class="form-control"
+               placeholder="Minimal 6 karakter" required minlength="6">
+      </div>
+
+      <button type="submit" class="btn btn-success" style="width: 100%; margin-top: 0.5rem; padding: 0.75rem;">
+        Buat Akun Mahasiswa
+      </button>
+    </form>
+    {% endif %}
+
+    <div style="margin-top: 1.75rem; text-align: center; border-top: 1px solid var(--border-color); padding-top: 1rem; font-size: 0.8rem; color: var(--text-light);">
+      <span>Admin bawaan: <code>{{ admin_email }}</code> / kata sandi: <code>admin123</code></span>
+    </div>
+  </div>
+</div>
+{% endblock %}

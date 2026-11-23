@@ -1,0 +1,23 @@
+# ==============================================================================
+# HabiQuest: Aplikasi Pelacak Kebiasaan Belajar Berbasis Gamifikasi
+# Pemrograman Berorientasi Objek (IF 7D) - Universitas Trunojoyo Madura
+# Dependensi Lengkap Proyek (Sesuai Proposal Bab IV - Tabel 4.1)
+# ==============================================================================
+
+# Web Framework & Django Core (MVT & Class-Based Views)
+Django>=5.1.0,<7.0.0
+asgiref>=3.8.1
+sqlparse>=0.5.0
+
+# Dukungan Zona Waktu Windows (Timezone Data)
+tzdata>=2024.1; sys_platform == 'win32'
+
+# ------------------------------------------------------------------------------
+# Keterangan Modul Pendukung (Sudah Bawaan Standar Python 3.10+):
+#  * sqlite3   : Basis data lokal SQLite (digunakan oleh DatabaseManager)
+#  * hashlib   : Enkripsi hashing kata sandi (PBKDF2-HMAC-SHA256 dengan salt)
+#  * hmac      : Komparasi digest kata sandi aman (hmac.compare_digest)
+#  * abc       : Definisi abstract class dan method (@abstractmethod)
+#  * unittest  : Pengujian unit logika PBO & antarmuka web (tests.py)
+#  * datetime  : Perhitungan tanggal, streak harian, dan grafik 7 hari
+# ------------------------------------------------------------------------------

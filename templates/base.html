@@ -1,0 +1,90 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}HabiQuest - Pelacak Kebiasaan Belajar{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Header Aplikasi -->
+  <header class="app-header">
+    <div class="container header-content">
+      <div class="logo-area">
+        <h1>⚔️ HabiQuest</h1>
+        <p>Aplikasi Pelacak Kebiasaan Belajar Berbasis Gamifikasi</p>
+      </div>
+
+      {% if akun %}
+      <div class="user-status-bar">
+        {% if akun.get_peran == "Mahasiswa" %}
+          <span class="badge-pill pill-streak">🔥 Streak: {{ streak|default:akun.profil.streak }} hari</span>
+          <span class="badge-pill pill-level">⭐ Level {{ level|default:akun.profil.level }}</span>
+        {% else %}
+          <span class="badge-pill pill-level">🛡️ Admin</span>
+        {% endif %}
+        <span><strong>{{ akun.nama }}</strong></span>
+        <a href="{% url 'logout' %}" class="btn btn-outline btn-sm">Keluar</a>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  <!-- Navigasi Menu Tab -->
+  {% if akun %}
+  <nav class="app-nav">
+    <div class="container">
+      <ul class="nav-tabs">
+        {% if akun.get_peran == "Mahasiswa" %}
+          <li class="nav-tab-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+            <a href="{% url 'dashboard' %}">📊 Dashboard</a>
+          </li>
+          <li class="nav-tab-item {% if request.resolver_match.url_name == 'habits' %}active{% endif %}">
+            <a href="{% url 'habits' %}">🎯 Kelola Kebiasaan</a>
+          </li>
+          <li class="nav-tab-item {% if request.resolver_match.url_name == 'lencana' %}active{% endif %}">
+            <a href="{% url 'lencana' %}">🏆 Lencana & Statistik</a>
+          </li>
+        {% else %}
+          <li class="nav-tab-item {% if tab_aktif == 'pengguna' %}active{% endif %}">
+            <a href="{% url 'admin_panel' %}?tab=pengguna">👥 Kelola Pengguna</a>
+          </li>
+          <li class="nav-tab-item {% if tab_aktif == 'badge' %}active{% endif %}">
+            <a href="{% url 'admin_panel' %}?tab=badge">🏅 Master Lencana</a>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+  </nav>
+  {% endif %}
+
+  <!-- Area Konten Utama -->
+  <main class="container" style="flex: 1; padding-top: 1rem; padding-bottom: 2.5rem;">
+    <!-- Flash Messages -->
+    {% if messages %}
+    <div class="messages-container">
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">
+        <span>{{ message }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <div class="container">
+      <p>HabiQuest &copy; 2026 — Pemrograman Berorientasi Obyek (IF 7D) | Universitas Trunojoyo Madura</p>
+    </div>
+  </footer>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
