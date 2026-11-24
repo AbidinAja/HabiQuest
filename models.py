@@ -60,8 +60,11 @@ class Akun(ABC):
             raise ValueError("Format email tidak valid.")
         self.__email = nilai
 
-    @property
-    def password_hash(self):
+    # Catatan: sengaja TIDAK ada getter publik untuk __password_hash.
+    # Hash kata sandi dipakai di dalam class (oleh login()) dan hanya
+    # diserahkan ke DatabaseManager saat akun disimpan (Encapsulation).
+    def _hash_untuk_disimpan(self):
+        """Protected: hanya dipakai DatabaseManager.tambah_akun()."""
         return self.__password_hash
 
     # ---- keamanan kata sandi ----
@@ -123,11 +126,6 @@ class ProfilGamifikasi:
     def terakhir_aktif(self):
         return self.__terakhir_aktif
 
-    @property
-    def xp_dalam_level(self):
-        """XP yang sudah terkumpul pada level saat ini (0..99)."""
-        return self.__xp % XP_PER_LEVEL
-
     def tambah_xp(self, jumlah):
         """Menambah XP; mengembalikan True bila naik level."""
         if jumlah < 0:
@@ -176,16 +174,11 @@ class ProfilGamifikasi:
 class LogAktivitas:
     """Catatan satu kali penyelesaian kebiasaan."""
 
-    def __init__(self, habit_id, tanggal, nilai, xp_didapat, id=None):
-        self.__id = id
+    def __init__(self, habit_id, tanggal, nilai, xp_didapat):
         self.__habit_id = habit_id
         self.__tanggal = tanggal
         self.__nilai = nilai
         self.__xp_didapat = xp_didapat
-
-    @property
-    def id(self):
-        return self.__id
 
     @property
     def habit_id(self):
@@ -228,14 +221,20 @@ class Habit(ABC):
     SATUAN = ""
     SEKALI_PER_HARI = False
 
-    def __init__(self, id, nama, target_mingguan=5):
+    def __init__(self, id, nama, target_mingguan=5, logs=None):
         self.__id = id
         self.nama = nama
         self.target_mingguan = target_mingguan
+        self.__logs = list(logs or [])     # composition: Habit memiliki LogAktivitas
 
     @property
     def id(self):
         return self.__id
+
+    @property
+    def logs(self):
+        """LogAktivitas milik habit ini (hanya-baca), sesuai relasi composition."""
+        return tuple(self.__logs)
 
     @property
     def nama(self):
@@ -277,11 +276,18 @@ class Habit(ABC):
             raise ValueError("Nilai harus bilangan bulat positif.")
 
     def catat(self, nilai, tanggal=None):
-        """Membuat LogAktivitas dari penyelesaian kebiasaan ini."""
+        """
+        Membuat LogAktivitas dari penyelesaian kebiasaan ini dan menyimpannya
+        di dalam habit (composition). Kebiasaan checklist hanya boleh
+        dicatat sekali per hari.
+        """
+        tanggal = tanggal or date.today()
         self.validasi_nilai(nilai)
-        return LogAktivitas(
-            self.id, tanggal or date.today(), nilai, self.hitung_xp(nilai)
-        )
+        if self.SEKALI_PER_HARI and any(l.tanggal == tanggal for l in self.__logs):
+            raise ValueError(f"Kebiasaan '{self.nama}' sudah dicatat selesai hari ini.")
+        log = LogAktivitas(self.id, tanggal, nilai, self.hitung_xp(nilai))
+        self.__logs.append(log)
+        return log
 
     def __str__(self):
         return f"[{self.NAMA_JENIS}] {self.nama} (target {self.target_mingguan}x/minggu)"
@@ -357,11 +363,11 @@ JENIS_HABIT = {
 }
 
 
-def buat_habit(jenis, nama, target_mingguan=5, id=None):
+def buat_habit(jenis, nama, target_mingguan=5, id=None, logs=None):
     """Factory: membuat objek Habit yang sesuai dengan 'jenis'."""
     if jenis not in JENIS_HABIT:
         raise ValueError(f"Jenis kebiasaan tidak dikenal: {jenis}")
-    return JENIS_HABIT[jenis](id, nama, target_mingguan)
+    return JENIS_HABIT[jenis](id, nama, target_mingguan, logs)
 
 
 # =====================================================================
@@ -478,9 +484,13 @@ class Mahasiswa(Akun):
         return frozenset(self.__id_badge)
 
     @classmethod
-    def daftar(cls, db, nama, email, password):
-        """Registrasi mahasiswa baru melalui DatabaseManager."""
-        return db.daftar_mahasiswa(nama, email, password)
+    def daftar(cls, nama, email, password):
+        """
+        Membuat objek Mahasiswa baru dengan kata sandi yang sudah di-hash.
+        Objek ini belum tersimpan; simpan dengan DatabaseManager.tambah_akun().
+        Melempar ValueError bila nama/email/kata sandi tidak valid.
+        """
+        return cls(None, nama, email, cls.buat_hash(password))
 
     def tambah_habit(self, habit):
         self.__habits.append(habit)
@@ -495,6 +505,10 @@ class Mahasiswa(Akun):
         return None
 
     def hapus_habit(self, habit_id):
+        """Melepas habit dari daftar milik mahasiswa ini.
+        Melempar ValueError bila habit bukan miliknya."""
+        if self.cari_habit(habit_id) is None:
+            raise ValueError("Kebiasaan tidak ditemukan.")
         self.__habits = [h for h in self.__habits if h.id != habit_id]
 
     def cari_habit(self, habit_id):
@@ -547,9 +561,12 @@ class Admin(Akun):
             raise ValueError("Akun Admin tidak boleh dihapus.")
         db.hapus_akun(akun_id)
 
-    def tambah_badge(self, db, tipe, nama, deskripsi, ambang):
-        """Menambah master lencana melalui DatabaseManager."""
-        return db.tambah_badge(tipe, nama, deskripsi, ambang)
+    def tambah_badge(self, db, badge):
+        """Menambah master lencana (objek BadgeStreak/BadgeXP) melalui
+        DatabaseManager; mengembalikan id lencana baru."""
+        if not isinstance(badge, Badge):
+            raise ValueError("Lencana tidak valid.")
+        return db.tambah_badge(badge)
 
     def hapus_badge(self, db, badge_id):
         """Menghapus master lencana melalui DatabaseManager."""

@@ -10,7 +10,7 @@ Sesuai rancangan pada Proposal Bab III & IV:
   - LencanaView    : koleksi achievement & grafik statistik 7 hari
   - AdminView      : kelola pengguna dan master lencana
 """
-from datetime import date
+from datetime import date, timedelta
 from django.conf import settings
 from django.contrib import messages
 from django.shortcuts import redirect, render
@@ -20,6 +20,7 @@ from database import DatabaseManager, ADMIN_EMAIL_DEFAULT
 from models import (
     Admin,
     Mahasiswa,
+    buat_badge,
     JENIS_HABIT,
     XP_PER_LEVEL,
 )
@@ -40,26 +41,20 @@ def get_akun_login(request, db):
 
 
 # =====================================================================
-# REDIREKSI HALAMAN UTAMA
-# =====================================================================
-class HomeRedirectView(View):
-    def get(self, request):
-        db = get_db()
-        akun = get_akun_login(request, db)
-        if akun is None:
-            return redirect('login')
-        if isinstance(akun, Admin):
-            return redirect('admin_panel')
-        return redirect('dashboard')
-
-
-# =====================================================================
 # LOGIN & REGISTRASI (Polymorphic Redirect)
 # =====================================================================
 class LoginView(View):
+    """
+    Halaman login & registrasi. Juga menangani:
+    - halaman utama ('/'): pengguna yang sudah login diarahkan ke dashboard-nya;
+    - logout ('/logout/', keluar=True): sesi dihapus lalu kembali ke login.
+    """
     template_name = 'login.html'
 
-    def get(self, request):
+    def get(self, request, keluar=False):
+        if keluar:
+            request.session.flush()
+            return redirect('login')
         db = get_db()
         akun = get_akun_login(request, db)
         if akun is not None:
@@ -74,7 +69,10 @@ class LoginView(View):
             'admin_email': ADMIN_EMAIL_DEFAULT,
         })
 
-    def post(self, request):
+    def post(self, request, keluar=False):
+        if keluar:
+            request.session.flush()
+            return redirect('login')
         action = request.POST.get('action', 'login')
         db = get_db()
 
@@ -82,7 +80,7 @@ class LoginView(View):
             email = request.POST.get('email', '').strip()
             password = request.POST.get('password', '')
 
-            akun = db.ambil_akun_by_email(email)
+            akun = db.ambil_akun(email=email)
             if akun is None or not akun.login(password):
                 messages.error(request, 'Email atau kata sandi salah.')
                 return render(request, self.template_name, {
@@ -105,9 +103,9 @@ class LoginView(View):
             password = request.POST.get('password', '')
 
             try:
-                # Memanfaatkan classmethod Mahasiswa.daftar
-                mhs = Mahasiswa.daftar(db, nama, email, password)
-                request.session['akun_id'] = mhs.id
+                # classmethod Mahasiswa.daftar membuat objek, lalu disimpan
+                mhs = Mahasiswa.daftar(nama, email, password)
+                request.session['akun_id'] = db.tambah_akun(mhs)
                 messages.success(request, f'Selamat datang, {mhs.nama}! Akun Anda berhasil dibuat.')
                 return redirect('dashboard')
             except ValueError as e:
@@ -119,19 +117,6 @@ class LoginView(View):
                     'admin_email': ADMIN_EMAIL_DEFAULT,
                 })
 
-        return redirect('login')
-
-
-# =====================================================================
-# LOGOUT
-# =====================================================================
-class LogoutView(View):
-    def get(self, request):
-        request.session.flush()
-        return redirect('login')
-
-    def post(self, request):
-        request.session.flush()
         return redirect('login')
 
 
@@ -151,10 +136,13 @@ class DashboardView(View):
 
         hari_ini = date.today()
         habits_tampilan = []
+        awal_7_hari = hari_ini - timedelta(days=6)
         for h in akun.habits:
-            sudah = db.sudah_dicatat(h.id, hari_ini)
-            total_hari = db.total_nilai_hari(h.id, hari_ini)
-            hari_aktif = db.hari_aktif_7_hari(h.id, hari_ini)
+            log_hari_ini = [l for l in h.logs if l.tanggal == hari_ini]
+            sudah = bool(log_hari_ini)
+            total_hari = sum(l.nilai for l in log_hari_ini)
+            hari_aktif = len({l.tanggal for l in h.logs
+                              if awal_7_hari <= l.tanggal <= hari_ini})
 
             if h.JENIS == 'belajar':
                 status_hari_ini = f'{total_hari} menit' if sudah else 'Belum'
@@ -182,7 +170,7 @@ class DashboardView(View):
         profil = akun.profil
         xp_total = profil.xp
         level = profil.level
-        xp_dalam_level = profil.xp_dalam_level
+        xp_dalam_level = xp_total % XP_PER_LEVEL
         persen_level = int((xp_dalam_level / XP_PER_LEVEL) * 100)
         streak_aktif = profil.streak_saat_ini(hari_ini)
 
@@ -218,13 +206,6 @@ class DashboardView(View):
                 return redirect('dashboard')
 
             hari_ini = date.today()
-            if habit.SEKALI_PER_HARI and db.sudah_dicatat(habit.id, hari_ini):
-                messages.warning(
-                    request,
-                    f"Kebiasaan '{habit.nama}' sudah dicatat selesai hari ini."
-                )
-                return redirect('dashboard')
-
             if habit.SEKALI_PER_HARI:
                 nilai = 1
             else:
@@ -331,7 +312,8 @@ class HabitView(View):
         elif action == 'hapus':
             try:
                 habit_id = int(request.POST.get('habit_id', 0))
-                db.hapus_habit(akun, habit_id)
+                akun.hapus_habit(habit_id)      # cek: habit harus milik akun ini
+                db.hapus_habit(habit_id)
                 messages.success(request, 'Kebiasaan berhasil dihapus.')
             except (ValueError, TypeError) as e:
                 messages.error(request, f'Gagal menghapus kebiasaan: {e}')
@@ -354,12 +336,10 @@ class LencanaView(View):
             return redirect('admin_panel')
 
         master_badges = db.daftar_badge()
-        milik_dict = db.tanggal_badge_milik(akun.id)
 
         badges_tampilan = []
         for b in master_badges:
-            terbuka = b.id in milik_dict
-            tgl_didapat = milik_dict.get(b.id)
+            terbuka = b.id in akun.id_badge
             if b.TIPE == 'streak':
                 syarat_teks = f'Streak {b.ambang} hari'
             elif b.TIPE == 'xp':
@@ -374,7 +354,7 @@ class LencanaView(View):
                 'syarat': syarat_teks,
                 'tipe': b.TIPE,
                 'terbuka': terbuka,
-                'status': f'Terbuka ({tgl_didapat})' if terbuka else 'Terkunci',
+                'status': 'Terbuka' if terbuka else 'Terkunci',
             })
 
         # Grafik XP 7 hari terakhir
@@ -401,7 +381,14 @@ class LencanaView(View):
             })
 
         # Riwayat terbaru
-        riwayat = db.riwayat(akun.id, batas=15)
+        riwayat = []
+        for h in akun.habits:
+            for l in reversed(h.logs):          # terbaru lebih dulu
+                data = l.to_dict()
+                data['nama'] = h.nama
+                riwayat.append(data)
+        riwayat.sort(key=lambda r: r['tanggal'], reverse=True)
+        riwayat = riwayat[:15]
 
         return render(request, self.template_name, {
             'akun': akun,
@@ -426,10 +413,18 @@ class AdminView(View):
             return redirect('dashboard')
 
         tab = request.GET.get('tab', 'pengguna')
-        pengguna_list = db.ringkasan_pengguna()
+        pengguna_list = [
+            {'id': akun.id, 'nama': akun.nama, 'email': akun.email,
+             'peran': akun.get_peran(), 'level': 0, 'xp': 0}
+        ] + [
+            {'id': m.id, 'nama': m.nama, 'email': m.email,
+             'peran': m.get_peran(), 'level': m.profil.level, 'xp': m.profil.xp}
+            for m in db.daftar_mahasiswa()
+        ]
         badge_list = db.daftar_badge()
 
         return render(request, self.template_name, {
+            'akun': akun,      # dipakai base.html untuk header, tombol Keluar & menu tab
             'admin': akun,
             'tab_aktif': tab,
             'pengguna_list': pengguna_list,
@@ -459,7 +454,8 @@ class AdminView(View):
             deskripsi = request.POST.get('deskripsi', '').strip()
             try:
                 ambang = int(request.POST.get('ambang', 0))
-                akun.tambah_badge(db, tipe, nama, deskripsi, ambang)
+                badge = buat_badge(tipe, nama, deskripsi, ambang)
+                akun.tambah_badge(db, badge)
                 messages.success(request, f"Master lencana '{nama}' berhasil ditambahkan.")
             except ValueError as e:
                 messages.error(request, str(e))
