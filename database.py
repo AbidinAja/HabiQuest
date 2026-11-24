@@ -8,7 +8,7 @@ import sqlite3
 from datetime import date, timedelta
 
 from models import (
-    Akun, Mahasiswa, Admin, ProfilGamifikasi,
+    Akun, Mahasiswa, Admin, ProfilGamifikasi, Badge, LogAktivitas,
     buat_habit, buat_badge,
 )
 
@@ -21,8 +21,28 @@ class DatabaseManager:
         self.__koneksi = sqlite3.connect(path, check_same_thread=False)
         self.__koneksi.row_factory = sqlite3.Row
         self.__koneksi.execute("PRAGMA foreign_keys = ON")
+        self.__tertutup = False
         self._buat_tabel()
         self._isi_data_awal()
+
+    # ------------------------------------------------------------------
+    # Context manager: `with DatabaseManager(path) as db:` menutup
+    # koneksi secara otomatis setelah blok selesai.
+    # ------------------------------------------------------------------
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.tutup()
+        return False
+
+    def __del__(self):
+        # Jaring pengaman: koneksi ikut ditutup saat objek dibuang
+        # (mis. di akhir sebuah view) walau tutup() lupa dipanggil.
+        try:
+            self.tutup()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Persiapan database
@@ -106,7 +126,10 @@ class DatabaseManager:
                     "VALUES (?, ?, ?, ?)", bawaan)
 
     def tutup(self):
-        self.__koneksi.close()
+        """Menutup koneksi; aman dipanggil lebih dari sekali."""
+        if not self.__tertutup:
+            self.__koneksi.close()
+            self.__tertutup = True
 
     # ------------------------------------------------------------------
     # Akun
@@ -118,45 +141,45 @@ class DatabaseManager:
             ((email or "").strip().lower(),)).fetchone()
         return row is not None
 
-    def tambah_akun(self, nama, email, password, peran="Mahasiswa"):
-        """Menambah akun baru (Mahasiswa atau Admin)."""
-        if peran == "Mahasiswa":
-            return self.daftar_mahasiswa(nama, email, password)
-        hash_pw = Akun.buat_hash(password)
-        with self.__koneksi:
-            cur = self.__koneksi.execute(
-                "INSERT INTO akun (nama, email, password_hash, peran) "
-                "VALUES (?, ?, ?, ?)",
-                (nama.strip(), email.strip().lower(), hash_pw, peran))
-        return self.ambil_akun(cur.lastrowid)
-
-    def daftar_mahasiswa(self, nama, email, password):
-        """Registrasi mahasiswa baru. Melempar ValueError bila data tidak valid."""
-        hash_pw = Akun.buat_hash(password)
-        Mahasiswa(None, nama, email, hash_pw)      # hanya untuk validasi nama/email
-        nama_bersih = nama.strip()
-        email_bersih = email.strip().lower()
+    def tambah_akun(self, akun):
+        """
+        Menyimpan objek akun baru (Mahasiswa atau Admin) dan mengembalikan
+        id-nya. Peran diambil dari akun.get_peran() (polymorphism).
+        Melempar ValueError bila email sudah terdaftar.
+        """
+        if not isinstance(akun, Akun):
+            raise ValueError("Akun tidak valid.")
+        if self.email_terdaftar(akun.email):
+            raise ValueError("Email sudah terdaftar.")
         try:
             with self.__koneksi:
                 cur = self.__koneksi.execute(
                     "INSERT INTO akun (nama, email, password_hash, peran) "
-                    "VALUES (?, ?, ?, 'Mahasiswa')",
-                    (nama_bersih, email_bersih, hash_pw))
-                self.__koneksi.execute(
-                    "INSERT INTO profil (akun_id) VALUES (?)", (cur.lastrowid,))
+                    "VALUES (?, ?, ?, ?)",
+                    (akun.nama.strip(), akun.email.strip().lower(),
+                     akun._hash_untuk_disimpan(), akun.get_peran()))
+                if isinstance(akun, Mahasiswa):
+                    self.__koneksi.execute(
+                        "INSERT INTO profil (akun_id) VALUES (?)", (cur.lastrowid,))
         except sqlite3.IntegrityError:
             raise ValueError("Email sudah terdaftar.")
-        return self.ambil_akun(cur.lastrowid)
+        return cur.lastrowid
 
-    def ambil_akun(self, akun_id):
-        row = self.__koneksi.execute(
-            "SELECT * FROM akun WHERE id = ?", (akun_id,)).fetchone()
-        return self._bangun_akun(row) if row else None
+    def daftar_mahasiswa(self):
+        """Daftar semua akun Mahasiswa sebagai objek Mahasiswa."""
+        rows = self.__koneksi.execute(
+            "SELECT * FROM akun WHERE peran = 'Mahasiswa' ORDER BY id").fetchall()
+        return [self._bangun_akun(r) for r in rows]
 
-    def ambil_akun_by_email(self, email):
-        row = self.__koneksi.execute(
-            "SELECT * FROM akun WHERE email = ?",
-            ((email or "").strip().lower(),)).fetchone()
+    def ambil_akun(self, akun_id=None, email=None):
+        """Mengambil satu akun berdasarkan id ATAU email (untuk login)."""
+        if akun_id is not None:
+            row = self.__koneksi.execute(
+                "SELECT * FROM akun WHERE id = ?", (akun_id,)).fetchone()
+        else:
+            row = self.__koneksi.execute(
+                "SELECT * FROM akun WHERE email = ?",
+                ((email or "").strip().lower(),)).fetchone()
         return self._bangun_akun(row) if row else None
 
     def _bangun_akun(self, row):
@@ -170,7 +193,8 @@ class DatabaseManager:
         profil = ProfilGamifikasi(p["xp"], p["level"], p["streak"], terakhir) \
             if p else ProfilGamifikasi()
         habits = [
-            buat_habit(h["jenis"], h["nama"], h["target_mingguan"], h["id"])
+            buat_habit(h["jenis"], h["nama"], h["target_mingguan"], h["id"],
+                       self._ambil_log(h["id"]))
             for h in self.__koneksi.execute(
                 "SELECT * FROM habit WHERE akun_id = ? ORDER BY id", (row["id"],))
         ]
@@ -181,14 +205,15 @@ class DatabaseManager:
         return Mahasiswa(row["id"], row["nama"], row["email"],
                          row["password_hash"], profil, habits, id_badge)
 
-    def ringkasan_pengguna(self):
-        """Daftar semua akun (untuk panel admin)."""
-        rows = self.__koneksi.execute("""
-            SELECT a.id, a.nama, a.email, a.peran,
-                   COALESCE(p.level, 0) AS level, COALESCE(p.xp, 0) AS xp
-            FROM akun a LEFT JOIN profil p ON p.akun_id = a.id
-            ORDER BY a.id""").fetchall()
-        return [dict(r) for r in rows]
+    def _ambil_log(self, habit_id):
+        """Memuat LogAktivitas milik satu habit (composition Habit-LogAktivitas)."""
+        return [
+            LogAktivitas(r["habit_id"], date.fromisoformat(r["tanggal"]),
+                         r["nilai"], r["xp_didapat"])
+            for r in self.__koneksi.execute(
+                "SELECT * FROM log_aktivitas WHERE habit_id = ? ORDER BY id",
+                (habit_id,))
+        ]
 
     def hapus_akun(self, akun_id):
         with self.__koneksi:
@@ -210,15 +235,27 @@ class DatabaseManager:
         return habit
 
     def ubah_habit(self, habit):
+        """
+        Menyimpan perubahan nama/target habit.
+        Kepemilikan dicek lebih dulu oleh Mahasiswa.ubah_habit().
+        """
         with self.__koneksi:
-            self.__koneksi.execute(
+            cur = self.__koneksi.execute(
                 "UPDATE habit SET nama = ?, target_mingguan = ? WHERE id = ?",
                 (habit.nama, habit.target_mingguan, habit.id))
+        if cur.rowcount == 0:
+            raise ValueError("Kebiasaan tidak ditemukan.")
 
-    def hapus_habit(self, mhs, habit_id):
+    def hapus_habit(self, habit_id):
+        """
+        Menghapus habit beserta log-nya.
+        Kepemilikan dicek lebih dulu oleh Mahasiswa.hapus_habit().
+        """
         with self.__koneksi:
-            self.__koneksi.execute("DELETE FROM habit WHERE id = ?", (habit_id,))
-        mhs.hapus_habit(habit_id)
+            cur = self.__koneksi.execute(
+                "DELETE FROM habit WHERE id = ?", (habit_id,))
+        if cur.rowcount == 0:
+            raise ValueError("Kebiasaan tidak ditemukan.")
 
     # ------------------------------------------------------------------
     # Log aktivitas & statistik
@@ -244,29 +281,6 @@ class DatabaseManager:
                     "VALUES (?, ?, ?)",
                     (mhs.id, badge.id, hasil.log.tanggal.isoformat()))
 
-    def sudah_dicatat(self, habit_id, tanggal):
-        row = self.__koneksi.execute(
-            "SELECT 1 FROM log_aktivitas WHERE habit_id = ? AND tanggal = ?",
-            (habit_id, tanggal.isoformat())).fetchone()
-        return row is not None
-
-    def total_nilai_hari(self, habit_id, tanggal):
-        row = self.__koneksi.execute(
-            "SELECT COALESCE(SUM(nilai), 0) AS total FROM log_aktivitas "
-            "WHERE habit_id = ? AND tanggal = ?",
-            (habit_id, tanggal.isoformat())).fetchone()
-        return row["total"]
-
-    def hari_aktif_7_hari(self, habit_id, akhir=None):
-        """Jumlah hari berbeda (dari 7 hari terakhir) kebiasaan ini dikerjakan."""
-        akhir = akhir or date.today()
-        awal = akhir - timedelta(days=6)
-        row = self.__koneksi.execute(
-            "SELECT COUNT(DISTINCT tanggal) AS n FROM log_aktivitas "
-            "WHERE habit_id = ? AND tanggal BETWEEN ? AND ?",
-            (habit_id, awal.isoformat(), akhir.isoformat())).fetchone()
-        return row["n"]
-
     def xp_harian(self, akun_id, hari=7, akhir=None):
         """Daftar (tanggal, xp) untuk 'hari' hari terakhir, hari kosong = 0."""
         akhir = akhir or date.today()
@@ -284,15 +298,6 @@ class DatabaseManager:
             hasil.append((t, peta.get(t.isoformat(), 0)))
         return hasil
 
-    def riwayat(self, akun_id, batas=20):
-        """Aktivitas terbaru: (tanggal, nama habit, nilai, satuan-jenis, xp)."""
-        rows = self.__koneksi.execute(
-            "SELECT l.tanggal, h.nama, h.jenis, l.nilai, l.xp_didapat "
-            "FROM log_aktivitas l JOIN habit h ON h.id = l.habit_id "
-            "WHERE h.akun_id = ? ORDER BY l.id DESC LIMIT ?",
-            (akun_id, batas)).fetchall()
-        return [dict(r) for r in rows]
-
     # ------------------------------------------------------------------
     # Badge
     # ------------------------------------------------------------------
@@ -302,22 +307,19 @@ class DatabaseManager:
         return [buat_badge(r["tipe"], r["nama"], r["deskripsi"],
                            r["ambang"], r["id"]) for r in rows]
 
-    def tambah_badge(self, tipe, nama, deskripsi, ambang):
-        badge = buat_badge(tipe, nama, deskripsi, ambang)   # validasi
+    def tambah_badge(self, badge):
+        """Menyimpan objek lencana (BadgeStreak/BadgeXP); mengembalikan id-nya."""
+        if not isinstance(badge, Badge):
+            raise ValueError("Lencana tidak valid.")
         with self.__koneksi:
-            self.__koneksi.execute(
+            cur = self.__koneksi.execute(
                 "INSERT INTO badge_master (tipe, nama, deskripsi, ambang) "
                 "VALUES (?, ?, ?, ?)",
                 (badge.TIPE, badge.nama, badge.deskripsi, badge.ambang))
+        return cur.lastrowid
 
     def hapus_badge(self, badge_id):
         with self.__koneksi:
             self.__koneksi.execute(
                 "DELETE FROM badge_master WHERE id = ?", (badge_id,))
 
-    def tanggal_badge_milik(self, akun_id):
-        """Dict {badge_id: tanggal_perolehan}."""
-        rows = self.__koneksi.execute(
-            "SELECT badge_id, tanggal FROM badge_akun WHERE akun_id = ?",
-            (akun_id,)).fetchall()
-        return {r["badge_id"]: r["tanggal"] for r in rows}
